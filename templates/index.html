@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <title>RAN Control Dashboard</title>
     <style>
     body {
@@ -65,6 +66,17 @@
         padding: 8px 16px;
         border-radius: 6px;
     }
+    .services-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 20px;
+    }
+
+    #metrics {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+    }
 
     </style>
 
@@ -75,9 +87,16 @@
 
 <button class="stop-all" onclick="stopAll()">🛑 STOP ALL</button>
 <div id="services" class="services-container"></div>
+<h2>📊 UE Throughput (Live)</h2>
+<canvas id="chart" height="100"></canvas>
 <h3 id="status_msg"></h3>
 
 <script>
+let chart;
+let chartData = {
+    labels: [],
+    datasets: []
+};
 
 const services = ["open5gs", "ric", "gnb", "xapp"];
 
@@ -136,9 +155,72 @@ function stopAll() {
     });
 }
 
-// auto refresh
-setInterval(fetchStatus, 3000);
+// chart functions
+function fetchMetrics() {
+    fetch('/metrics')
+    .then(res => res.json())
+    .then(data => updateChart(data));
+}
+
+function initChart() {
+    const ctx = document.getElementById('chart').getContext('2d');
+
+    chart = new Chart(ctx, {
+        type: 'line',
+        data: chartData,
+        options: {
+            responsive: true,
+            animation: false,
+            scales: {
+                x: {
+                    title: { display: true, text: 'Time' }
+                },
+                y: {
+                    title: { display: true, text: 'Throughput (Mbps)' }
+                }
+            }
+        }
+    });
+}
+
+function updateChart(data) {
+    const now = new Date().toLocaleTimeString();
+
+    chartData.labels.push(now);
+
+    // limit points (last 20)
+    if (chartData.labels.length > 20) {
+        chartData.labels.shift();
+        chartData.datasets.forEach(ds => ds.data.shift());
+    }
+
+    data.forEach(ue => {
+        let dataset = chartData.datasets.find(d => d.label === "UE " + ue.rnti);
+
+        if (!dataset) {
+            dataset = {
+                label: "UE " + ue.rnti,
+                data: [],
+                borderWidth: 2,
+                fill: false
+            };
+            chartData.datasets.push(dataset);
+        }
+
+        dataset.data.push(ue.throughput);
+    });
+
+    chart.update();
+}
+
+initChart();
 fetchStatus();
+fetchMetrics();
+
+setInterval(() => {
+    fetchStatus();
+    fetchMetrics();
+}, 3000);
 
 </script>
 

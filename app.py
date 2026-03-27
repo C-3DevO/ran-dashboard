@@ -1,9 +1,13 @@
+from datetime import datetime
 from flask import Flask, render_template, jsonify
 import subprocess
 import os
 import signal
+import pty
 import threading
 import time
+import re
+
 
 app = Flask(__name__)
 
@@ -49,6 +53,12 @@ DEPENDENCIES = {
 }
 
 processes = {}
+
+
+def generate_log_file(prefix):
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"/home/cp3-dev0/Simulation/logs/{prefix}_{timestamp}.log"
+
 
 # ---- OPEN5GS CONTROL ----
 
@@ -101,8 +111,39 @@ def dependencies_running(name):
 
     return True, "ok"
 
+#--- VISUAL FUNCTIONS ----
+
+
+def parse_gnb_log():
+    log_file = processes.get("gnb_log")
+    if not log_file:
+        return []
+
+    ue_data = {}
+
+    try:
+        with open(log_file, "r") as f:
+            lines = f.readlines()
+
+        for line in lines:
+            # matchIng UE rows
+            match = re.match(r"\s*\d+\s+(\d+)\s+\|\s+.*?\s+(\d+\.?\d*)M", line)
+
+            if match:
+                rnti = match.group(1)
+                throughput = float(match.group(2))
+
+                ue_data[rnti] = throughput
+
+    except Exception as e:
+        print("Parse error:", e)
+
+    return [{"rnti": k, "throughput": v} for k, v in ue_data.items()]
+
 
 # ---- CORE FUNCTIONS ----
+
+
 
 def start_process(name):
     if name in processes:
@@ -120,6 +161,33 @@ def start_process(name):
         return f"{name} not defined"
 
     try:
+        # Handling for gNB logging
+
+        if name == "gnb":
+            log_file = generate_log_file("gnb")
+            log_f = open(log_file, "w")
+
+            master_fd, slave_fd = pty.openpty()
+
+            proc = subprocess.Popen(
+                config["cmd"],
+                cwd=config["cwd"],
+                preexec_fn=os.setsid,
+                stdin=slave_fd,
+                stdout=log_f,
+                stderr=log_f,
+                text=True
+            )
+
+            processes[name] = proc
+            processes[f"{name}_log"] = log_file
+
+            # writing
+            os.write(master_fd, b"t\n")
+
+            return f"{name} started (PID {proc.pid}) → log: {log_file}"
+
+        #Default processes
         proc = subprocess.Popen(
             config["cmd"],
             cwd=config["cwd"],
@@ -127,6 +195,7 @@ def start_process(name):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
+
         processes[name] = proc
         return f"{name} started (PID {proc.pid})"
 
@@ -259,6 +328,12 @@ def stop_all_route():
 @app.route('/status')
 def status():
     return jsonify(get_status())
+
+
+@app.route('/metrics')
+def metrics():
+    data = parse_gnb_log()
+    return jsonify(data)
 
 
 # ---- MAIN ----
