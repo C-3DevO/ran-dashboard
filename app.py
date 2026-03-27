@@ -113,7 +113,6 @@ def dependencies_running(name):
 
 #--- VISUAL FUNCTIONS ----
 
-
 def parse_gnb_log():
     log_file = processes.get("gnb_log")
     if not log_file:
@@ -126,19 +125,33 @@ def parse_gnb_log():
             lines = f.readlines()
 
         for line in lines:
-            # matchIng UE rows
-            match = re.match(r"\s*\d+\s+(\d+)\s+\|\s+.*?\s+(\d+\.?\d*)M", line)
+            # match full UE line
+            match = re.match(
+                r"\s*\d+\s+(\d+)\s+\|\s+(\d+)\s+([\d\.]+)\s+(\d+)\s+(\d+\.?\d*)M",
+                line
+            )
 
             if match:
                 rnti = match.group(1)
-                throughput = float(match.group(2))
+                cqi = int(match.group(2))
+                ri = float(match.group(3))
+                mcs = int(match.group(4))
+                throughput = float(match.group(5))
 
-                ue_data[rnti] = throughput
+                ue_data[rnti] = {
+                    "rnti": rnti,
+                    "throughput": throughput,
+                    "cqi": cqi,
+                    "ri": ri,
+                    "mcs": mcs
+                }
 
     except Exception as e:
         print("Parse error:", e)
 
-    return [{"rnti": k, "throughput": v} for k, v in ue_data.items()]
+    return list(ue_data.values())
+
+
 
 
 # ---- CORE FUNCTIONS ----
