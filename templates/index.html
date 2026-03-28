@@ -165,13 +165,27 @@ function stopAll() {
 // chart functions
 
 function fetchMetrics() {
-    fetch('/metrics')
+    fetch('/status')
     .then(res => res.json())
-    .then(data => {
-        updateChart(data);
-        updateRadioMetrics(data);
+    .then(status => {
+
+        // If gNB is OFF we clear everything
+        if (status.gnb !== "running") {
+            resetChart();
+            clearRadioMetrics();
+            return;
+        }
+
+        // otherwise fetch metrics
+        fetch('/metrics')
+        .then(res => res.json())
+        .then(data => {
+            updateChart(data);
+            updateRadioMetrics(data);
+        });
     });
 }
+
 
 function initChart() {
     const ctx = document.getElementById('chart').getContext('2d');
@@ -228,12 +242,31 @@ function updateChart(data) {
         const min = Math.min(...allValues);
         const max = Math.max(...allValues);
 
-        chart.options.scales.y.min = min * 0.85;
+        chart.options.scales.y.min = min * 0.3;
         chart.options.scales.y.max = max * 1.1;
     }
 
     chart.update();
 }
+
+//resetting our chart
+function resetChart() {
+    chartData.labels = [];
+    chartData.datasets = [];
+
+    chart.options.scales.y.min = undefined;
+    chart.options.scales.y.max = undefined;
+    chart.options.plugins = {
+        title: {
+            display: true,
+            text: "gNB stopped — no data"
+        }
+    };
+
+    chart.update();
+}
+
+
 function updateRadioMetrics(data) {
     const container = document.getElementById("radio_metrics");
 
@@ -254,6 +287,11 @@ function updateRadioMetrics(data) {
             </div>
         `;
     });
+}
+
+
+function clearRadioMetrics() {
+    document.getElementById("radio_metrics").innerHTML = "<p>gNB stopped</p>";
 }
 
 
