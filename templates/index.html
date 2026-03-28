@@ -91,6 +91,18 @@
 <h1>🚀 sRAN Dashboard</h1>
 
 <button class="stop-all" onclick="stopAll()">🛑 STOP ALL</button>
+<h2>⚙️ Test Mode Control</h2>
+
+<div class="service">
+    <label>Number of UEs:</label>
+    <input type="number" id="ue_count" value="5"><br><br>
+
+    <label>Rank (RI):</label>
+    <input type="number" id="ri_value" value="1"><br><br>
+
+    <button class="start-btn" onclick="applyConfig()">Apply & Restart gNB</button>
+</div>
+
 <div id="services" class="services-container"></div>
 <h2>📊 UE Throughput (Live)</h2>
 <canvas id="chart" height="100"></canvas>
@@ -161,6 +173,23 @@ function stopAll() {
         render(data.status);
     });
 }
+//Mofidying configs from interface
+function applyConfig() {
+    const ue = document.getElementById("ue_count").value;
+    const ri = document.getElementById("ri_value").value;
+
+    fetch('/update_config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nof_ues: ue, ri: ri })
+    })
+    .then(res => res.json())
+    .then(data => {
+        document.getElementById("status_msg").innerText = data.msg;
+    });
+}
+
+
 
 // chart functions
 

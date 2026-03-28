@@ -1,5 +1,5 @@
 from datetime import datetime
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 import subprocess
 import os
 import signal
@@ -7,12 +7,14 @@ import pty
 import threading
 import time
 import re
+import yaml
 
 
 app = Flask(__name__)
 
 # ---- CONFIG ----
 BASE_DIR = "/home/cp3-dev0/Simulation"
+CONFIG_PATH = "/home/cp3-dev0/Simulation/srsRAN_Project/configs/testmode.yml"
 
 OPEN5GS_SERVICES = [
     "open5gs-amfd",
@@ -155,8 +157,6 @@ def parse_gnb_log():
 
 
 # ---- CORE FUNCTIONS ----
-
-
 
 def start_process(name):
     if name in processes:
@@ -309,6 +309,27 @@ def monitor_dependencies():
         if "gnb" not in processes:
             if "xapp" in processes:
                 stop_process("xapp")
+
+
+# Function to update the configs from terminal
+def update_testmode_config(nof_ues, ri):
+    with open(CONFIG_PATH, 'r') as f:
+        config = yaml.safe_load(f)
+
+    config['test_mode']['test_ue']['nof_ues'] = int(nof_ues)
+    config['test_mode']['test_ue']['ri'] = int(ri)
+
+    with open(CONFIG_PATH, 'w') as f:
+        yaml.dump(config, f)
+
+    # restart gNB
+    stop_process("gnb")
+    time.sleep(1)
+    start_process("gnb")
+
+    return "Config updated & gNB restarted"
+
+
 # ---- ROUTES ----
 
 @app.route('/')
@@ -347,6 +368,20 @@ def status():
 def metrics():
     data = parse_gnb_log()
     return jsonify(data)
+
+@app.route('/update_config', methods=['POST'])
+def update_config_route():
+    data = request.json
+
+    try:
+        msg = update_testmode_config(
+            data['nof_ues'],
+            data['ri']
+        )
+        return jsonify({"msg": msg})
+
+    except Exception as e:
+        return jsonify({"msg": f"Error: {str(e)}"})
 
 
 # ---- MAIN ----
