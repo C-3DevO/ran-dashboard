@@ -13,8 +13,8 @@ import yaml
 app = Flask(__name__)
 
 # ---- CONFIG ----
-BASE_DIR = "/home/cp3-dev0/Simulation"
-CONFIG_PATH = "/home/cp3-dev0/Simulation/srsRAN_Project/configs/testmode.yml"
+BASE_DIR = "/home/petros/Spring_Engineering_Project"
+CONFIG_PATH = "/home/petros/Spring_Engineering_Project/srsRAN_Project/configs/testmode.yml"
 
 OPEN5GS_SERVICES = [
     "open5gs-amfd",
@@ -36,13 +36,15 @@ COMMANDS = {
     "gnb": {
         "cmd": [
             "./apps/gnb/gnb",
-            "-c", "../configs/gnb_custom_cell_2.yml",
+            "-c", "../configs/gnb_custom_cell_properties_with_ric.yaml",
             "-c", "../configs/testmode.yml"
         ],
         "cwd": f"{BASE_DIR}/srsRAN_Project/build"
     },
     "xapp": {
-        "cmd": ["./xapp_oran_moni"],
+        "cmd": ["./xapp_fairness_moni",
+                "-c", "/usr/local/etc/flexric/xapp_kpm.conf"
+                ],
         "cwd": f"{BASE_DIR}/flexric/build/examples/xApp/c/monitor"
     }
 }
@@ -59,7 +61,7 @@ processes = {}
 
 def generate_log_file(prefix):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return f"/home/cp3-dev0/Simulation/logs/{prefix}_{timestamp}.log"
+    return f"/home/petros/Spring_Engineering_Project/logs/{prefix}_{timestamp}.log"
 
 
 # ---- OPEN5GS CONTROL ----
@@ -153,6 +155,117 @@ def parse_gnb_log():
 
     return list(ue_data.values())
 
+
+def parse_fairness_alert():
+    log_file = processes.get("gnb_log")
+    if not log_file or not os.path.exists(log_file):
+        return {
+            "status": "UNKNOWN",
+            "raw_jain": None,
+            "norm_jain": None,
+            "rolling_mu": None,
+            "rolling_var": None,
+            "delta": None,
+            "weakest_raw_ue": None,
+            "strongest_raw_ue": None,
+            "weakest_norm_ue": None,
+            "strongest_norm_ue": None,
+            "target_ue": None,
+            "action": None,
+        }
+
+    latest_fairness = None
+    latest_policy_raw = None
+    latest_policy_norm = None
+    latest_policy_status = None
+
+    fairness_re = re.compile(
+        r"KPM FAIRNESS DL: n=(\d+) raw_jain=([-\d\.]+) norm_jain=([-\d\.]+) "
+        r"rolling_mu=([-\d\.]+) rolling_var=([-\d\.]+) delta=([-\d\.]+)"
+    )
+
+    policy_raw_re = re.compile(
+        r"KPM POLICY DL: weakest_raw_ue=(\d+) weakest_raw=([-\d\.]+) "
+        r"strongest_raw_ue=(\d+) strongest_raw=([-\d\.]+)"
+    )
+
+    policy_norm_re = re.compile(
+        r"KPM POLICY DL: weakest_norm_ue=(\d+) weakest_norm=([-\d\.]+) "
+        r"strongest_norm_ue=(\d+) strongest_norm=([-\d\.]+)"
+    )
+
+    policy_status_re = re.compile(
+        r"KPM POLICY DL: status=([A-Z_]+) action=([a-z_]+) target_ue=(\d+)(?: .*?)?$"
+    )
+
+    try:
+        with open(log_file, "r") as f:
+            for line in f:
+                m = fairness_re.search(line)
+                if m:
+                    latest_fairness = {
+                        "n": int(m.group(1)),
+                        "raw_jain": float(m.group(2)),
+                        "norm_jain": float(m.group(3)),
+                        "rolling_mu": float(m.group(4)),
+                        "rolling_var": float(m.group(5)),
+                        "delta": float(m.group(6)),
+                    }
+
+                m = policy_raw_re.search(line)
+                if m:
+                    latest_policy_raw = {
+                        "weakest_raw_ue": int(m.group(1)),
+                        "weakest_raw": float(m.group(2)),
+                        "strongest_raw_ue": int(m.group(3)),
+                        "strongest_raw": float(m.group(4)),
+                    }
+
+                m = policy_norm_re.search(line)
+                if m:
+                    latest_policy_norm = {
+                        "weakest_norm_ue": int(m.group(1)),
+                        "weakest_norm": float(m.group(2)),
+                        "strongest_norm_ue": int(m.group(3)),
+                        "strongest_norm": float(m.group(4)),
+                    }
+
+                m = policy_status_re.search(line)
+                if m:
+                    latest_policy_status = {
+                        "status": m.group(1),
+                        "action": m.group(2),
+                        "target_ue": int(m.group(3)),
+                    }
+
+    except Exception as e:
+        return {"status": "ERROR", "message": str(e)}
+
+    result = {
+        "status": "UNKNOWN",
+        "raw_jain": None,
+        "norm_jain": None,
+        "rolling_mu": None,
+        "rolling_var": None,
+        "delta": None,
+        "weakest_raw_ue": None,
+        "strongest_raw_ue": None,
+        "weakest_norm_ue": None,
+        "strongest_norm_ue": None,
+        "target_ue": None,
+        "action": None,
+    }
+
+    if latest_fairness:
+        result.update(latest_fairness)
+    if latest_policy_raw:
+        result.update(latest_policy_raw)
+    if latest_policy_norm:
+        result.update(latest_policy_norm)
+    if latest_policy_status:
+        result.update(latest_policy_status)
+
+    return result
 
 
 
@@ -252,7 +365,7 @@ def stop_process(name):
             subprocess.run(["pkill", "-f", "nearRT-RIC"])
 
         elif name == "xapp":
-            subprocess.run(["pkill", "-f", "xapp_oran_moni"])
+            subprocess.run(["pkill", "-f", "xapp_fairness_moni"])
 
         del processes[name]
         return f"{name} stopped"
@@ -382,6 +495,10 @@ def update_config_route():
 
     except Exception as e:
         return jsonify({"msg": f"Error: {str(e)}"})
+
+@app.route('/fairness_alert')
+def fairness_alert():
+    return jsonify(parse_fairness_alert())
 
 
 # ---- MAIN ----
