@@ -43,8 +43,7 @@
     cursor: pointer;
     }
 
-    /*Start button */
-    .start-btn {
+    /*Start button */  .start-btn {
         background-color: #4CAF50;
         color: white;
     }
@@ -106,6 +105,10 @@
 <div id="services" class="services-container"></div>
 <h2>📊 UE Throughput (Live)</h2>
 <canvas id="chart" height="100"></canvas>
+
+<h2>📊 Throughput vs DL Buffer</h2>   // *
+<canvas id="dl_chart" height="100"></canvas>  // *
+
 <h2>📡 UE Radio Metrics</h2>
 <div id="radio_metrics"></div>
 <h3 id="status_msg"></h3>
@@ -116,7 +119,13 @@ let chartData = {
     labels: [],
     datasets: []
 };
-
+// *
+let dlChart;
+let dlChartData = {
+    labels: [],
+    datasets: []
+};
+// *
 const services = ["open5gs", "ric", "gnb", "xapp"];
 
 function render(statusData) {
@@ -201,6 +210,7 @@ function fetchMetrics() {
         // If gNB is OFF we clear everything
         if (status.gnb !== "running") {
             resetChart();
+            resetDlChart();   // *
             clearRadioMetrics();
             return;
         }
@@ -210,6 +220,7 @@ function fetchMetrics() {
         .then(res => res.json())
         .then(data => {
             updateChart(data);
+            updateDlChart(data);   // *
             updateRadioMetrics(data);
         });
     });
@@ -230,6 +241,8 @@ function initChart() {
                     title: { display: true, text: 'Time' }
                 },
                 y: {
+                    min: 0,
+                    max: 30,
                     title: { display: true, text: 'Throughput (Mbps)' }
                 }
             }
@@ -237,6 +250,36 @@ function initChart() {
     });
 }
 
+// *
+function initDlChart() {
+    const ctx = document.getElementById('dl_chart').getContext('2d');
+
+    dlChart = new Chart(ctx, {
+        type: 'line',
+        data: dlChartData,
+        options: {
+            responsive: true,
+            animation: false,
+            scales: {
+                x: {
+                    type: 'linear',
+                    min: 0,
+                    max: 10,
+                    ticks: {
+                        stepSize: 1
+                    },
+                    title: { display: true, text: 'DL Buffer Size' }
+                },
+                y: {
+                    min: 0,
+                    max: 30,
+                    title: { display: true, text: 'Throughput (Mbps)' }
+                }
+            }
+        }
+    });
+}
+// *
 function updateChart(data) {
     const now = new Date().toLocaleTimeString();
 
@@ -271,13 +314,44 @@ function updateChart(data) {
         const min = Math.min(...allValues);
         const max = Math.max(...allValues);
 
-        chart.options.scales.y.min = min * 0.3;
-        chart.options.scales.y.max = max * 1.1;
+        chart.options.scales.y.min = min * 1;
+        chart.options.scales.y.max = max * 1;
     }
 
     chart.update();
 }
 
+//*
+function updateDlChart(data) {
+
+    data.forEach(ue => {
+
+        let dataset = dlChartData.datasets.find(d => d.label === "UE " + ue.rnti);
+
+        if (!dataset) {
+            dataset = {
+                label: "UE " + ue.rnti,
+                data: [],
+                borderWidth: 2,
+                fill: false
+            };
+            dlChartData.datasets.push(dataset);
+        }
+
+        dataset.data.push({
+            x: ue.dl_bs ?? 0,
+            y: ue.throughput ?? 0
+        });
+
+        // limit trajectory length
+        if (dataset.data.length > 30) {
+            dataset.data.shift();
+        }
+    });
+
+    dlChart.update();
+}
+//*
 //resetting our chart
 function resetChart() {
     chartData.labels = [];
@@ -294,7 +368,17 @@ function resetChart() {
 
     chart.update();
 }
+// *
+function resetDlChart() {
+    dlChartData.labels = [];
+    dlChartData.datasets = [];
 
+    dlChart.options.scales.y.min = undefined;
+    dlChart.options.scales.y.max = undefined;
+
+    dlChart.update();
+}
+// *
 
 function updateRadioMetrics(data) {
     const container = document.getElementById("radio_metrics");
@@ -325,6 +409,7 @@ function clearRadioMetrics() {
 
 
 initChart();
+initDlChart();   // *
 fetchStatus();
 fetchMetrics();
 

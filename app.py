@@ -13,8 +13,8 @@ import yaml
 app = Flask(__name__)
 
 # ---- CONFIG ----
-BASE_DIR = "/home/cp3-dev0/Simulation"
-CONFIG_PATH = "/home/cp3-dev0/Simulation/srsRAN_Project/configs/testmode.yml"
+BASE_DIR = "/home/binte/Simulation"
+CONFIG_PATH = "/home/binte/Simulation/srsRAN_Project/configs/testmode.yml"
 
 OPEN5GS_SERVICES = [
     "open5gs-amfd",
@@ -36,7 +36,7 @@ COMMANDS = {
     "gnb": {
         "cmd": [
             "./apps/gnb/gnb",
-            "-c", "../configs/gnb_custom_cell_2.yml",
+            "-c", "../configs/gnb_custom_cell_properties.yml",
             "-c", "../configs/testmode.yml"
         ],
         "cwd": f"{BASE_DIR}/srsRAN_Project/build"
@@ -59,7 +59,7 @@ processes = {}
 
 def generate_log_file(prefix):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return f"/home/cp3-dev0/Simulation/logs/{prefix}_{timestamp}.log"
+    return f"/home/binte/Simulation/logs/{prefix}_{timestamp}.log"
 
 
 # ---- OPEN5GS CONTROL ----
@@ -112,6 +112,30 @@ def dependencies_running(name):
                 return False, f"{dep} is not running"
 
     return True, "ok"
+# **** helper function
+def parse_value(value_str):
+    """
+    Converts values like:
+    20M → 20
+    742k → 0.742
+    0 → 0
+    """
+    value_str = value_str.strip()
+
+    if value_str.endswith("M"):
+        return float(value_str[:-1])
+
+    elif value_str.endswith("k"):
+        return float(value_str[:-1]) / 1000
+
+    elif value_str == "0":
+        return 0.0
+
+    else:
+        try:
+            return float(value_str)
+        except:
+            return 0.0
 
 #--- VISUAL FUNCTIONS ----
 
@@ -128,21 +152,38 @@ def parse_gnb_log():
 
         for line in lines:
             # match full UE line
+
+            #match = re.match(
+            #    r"\s*\d+\s+(\d+)\s+\|\s+(\d+)\s+([\d\.]+)\s+(\d+)\s+(\d+\.?\d*)M",
+            #   line
+            #)
+
+            #match = re.match(
+            #    r"\s*\d+\s+(\d+)\s+\|\s+(\d+)\s+([\d\.]+)\s+(\d+)\s+(\S+)\s+.*?\s+(\S+)",
+            #   line
+            #)
+
             match = re.match(
-                r"\s*\d+\s+(\d+)\s+\|\s+(\d+)\s+([\d\.]+)\s+(\d+)\s+(\d+\.?\d*)M",
+                r"\s*\d+\s+(\d+)\s+\|\s+(\d+)\s+([\d\.]+)\s+(\d+)\s+(\S+)\s+\S+\s+\S+\s+\S+\s+(\S+)",
                 line
             )
+
 
             if match:
                 rnti = match.group(1)
                 cqi = int(match.group(2))
                 ri = float(match.group(3))
                 mcs = int(match.group(4))
-                throughput = float(match.group(5))
+                #throughput = float(match.group(5))
+                #throughput = float(match.group(5))
+                #dl_bs = float(match.group(6))
+                throughput = parse_value(match.group(5))  # brate
+                dl_bs = parse_value(match.group(6))  # dl buffer
 
                 ue_data[rnti] = {
                     "rnti": rnti,
                     "throughput": throughput,
+                    "dl_bs": dl_bs,
                     "cqi": cqi,
                     "ri": ri,
                     "mcs": mcs
