@@ -271,8 +271,8 @@ function updateChart(data) {
         const min = Math.min(...allValues);
         const max = Math.max(...allValues);
 
-        chart.options.scales.y.min = min * 0.3;
-        chart.options.scales.y.max = max * 1.1;
+        chart.options.scales.y.min = 0.0;
+        chart.options.scales.y.max = max * 1.65;
     }
 
     chart.update();
