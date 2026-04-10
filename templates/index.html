@@ -209,6 +209,11 @@ function fetchMetrics() {
         fetch('/metrics')
         .then(res => res.json())
         .then(data => {
+            if (data.length === 0) {
+                resetChart();
+                clearRadioMetrics();
+                return;
+            }
             updateChart(data);
             updateRadioMetrics(data);
         });
@@ -238,6 +243,12 @@ function initChart() {
 }
 
 function updateChart(data) {
+     // remove "stopped" message when data comes back
+    chart.options.plugins = {
+        title: {
+            display: false
+       }
+    };
     const now = new Date().toLocaleTimeString();
 
     chartData.labels.push(now);
@@ -272,7 +283,7 @@ function updateChart(data) {
         const max = Math.max(...allValues);
 
         chart.options.scales.y.min = 0.0;
-        chart.options.scales.y.max = max * 1.65;
+        chart.options.scales.y.max = max * 1.95;
     }
 
     chart.update();
