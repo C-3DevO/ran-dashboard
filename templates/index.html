@@ -83,6 +83,38 @@
         gap: 15px;
     }
 
+    #fairness_alerts {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 10px;
+    }
+
+    .fairness-alert-card {
+        background: #2c2c3e;
+        border-radius: 10px;
+        padding: 15px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    }
+
+    .fairness-balanced {
+        border-left: 6px solid #00ff9c;
+    }
+
+    .fairness-imbalance {
+        border-left: 6px solid #ffb347;
+    }
+
+    .fairness-strong {
+        border-left: 6px solid #ff4d4d;
+    }
+
+    .alert-time {
+        font-size: 0.9em;
+        color: #cfcfcf;
+        margin-bottom: 6px;
+    }
+
     </style>
 
 </head>
@@ -108,8 +140,11 @@
 <canvas id="chart" height="100"></canvas>
 <h2>📡 UE Radio Metrics</h2>
 <div id="radio_metrics"></div>
-<h3 id="status_msg"></h3>
 
+<h2>⚠️ Fairness Alerts</h2>
+<div id="fairness_alerts"></div>
+
+<h3 id="status_msg"></h3>
 <script>
 let chart;
 let chartData = {
@@ -186,6 +221,102 @@ function applyConfig() {
     .then(res => res.json())
     .then(data => {
         document.getElementById("status_msg").innerText = data.msg;
+    });
+}
+
+let fairnessAlertHistory = [];
+let lastFairnessSignature = null;
+const MAX_FAIRNESS_ALERTS = 6;
+
+function fetchFairnessAlert() {
+    fetch('/fairness_alert')
+    .then(res => res.json())
+    .then(data => {
+        const container = document.getElementById("fairness_alerts");
+        const status = data.status || "UNKNOWN";
+
+        // Only store alerts when there is IMBALANCE or STRONG_IMBALANCE
+        if (status !== "IMBALANCE" && status !== "STRONG_IMBALANCE") {
+            return;
+        }
+
+        // Create a signature so identical repeated alerts are not re-added every poll
+        const signature = JSON.stringify({
+            status: data.status,
+            action: data.action,
+            target_ue: data.target_ue,
+            weakest_norm_ue: data.weakest_norm_ue,
+            strongest_norm_ue: data.strongest_norm_ue,
+            norm_jain: data.norm_jain,
+            delta: data.delta
+        });
+
+        if (signature === lastFairnessSignature) {
+            return;
+        }
+
+        lastFairnessSignature = signature;
+
+        const now = new Date().toLocaleTimeString();
+
+        fairnessAlertHistory.unshift({
+            time: now,
+            status: data.status,
+            action: data.action,
+            target_ue: data.target_ue,
+            raw_jain: data.raw_jain,
+            norm_jain: data.norm_jain,
+            rolling_mu: data.rolling_mu,
+            delta: data.delta,
+            weakest_raw_ue: data.weakest_raw_ue,
+            strongest_raw_ue: data.strongest_raw_ue,
+            weakest_norm_ue: data.weakest_norm_ue,
+            strongest_norm_ue: data.strongest_norm_ue
+        });
+
+        if (fairnessAlertHistory.length > MAX_FAIRNESS_ALERTS) {
+            fairnessAlertHistory = fairnessAlertHistory.slice(0, MAX_FAIRNESS_ALERTS);
+        }
+
+        renderFairnessAlerts();
+    })
+    .catch(err => {
+        console.error("Fairness fetch error:", err);
+    });
+}
+
+function renderFairnessAlerts() {
+    const container = document.getElementById("fairness_alerts");
+
+    if (fairnessAlertHistory.length === 0) {
+        container.innerHTML = "<div class='service'>No imbalance alerts yet.</div>";
+        return;
+    }
+
+    container.innerHTML = "";
+
+    fairnessAlertHistory.forEach(alert => {
+        let alertClass = "fairness-imbalance";
+        if (alert.status === "STRONG_IMBALANCE") {
+            alertClass = "fairness-strong";
+        }
+
+        container.innerHTML += `
+            <div class="fairness-alert-card ${alertClass}">
+                <div class="alert-time">Detected at: ${alert.time}</div>
+                <h3>${alert.status}</h3>
+                <p><b>Action:</b> ${alert.action || "N/A"}</p>
+                <p><b>Target UE:</b> ${alert.target_ue !== null ? alert.target_ue : "N/A"}</p>
+                <p><b>Raw Jain:</b> ${alert.raw_jain !== null ? alert.raw_jain.toFixed(6) : "N/A"}</p>
+                <p><b>Normalized Jain:</b> ${alert.norm_jain !== null ? alert.norm_jain.toFixed(6) : "N/A"}</p>
+                <p><b>Rolling Mean:</b> ${alert.rolling_mu !== null ? alert.rolling_mu.toFixed(6) : "N/A"}</p>
+                <p><b>Delta:</b> ${alert.delta !== null ? alert.delta.toFixed(6) : "N/A"}</p>
+                <p><b>Weakest Raw UE:</b> ${alert.weakest_raw_ue !== null ? alert.weakest_raw_ue : "N/A"}</p>
+                <p><b>Strongest Raw UE:</b> ${alert.strongest_raw_ue !== null ? alert.strongest_raw_ue : "N/A"}</p>
+                <p><b>Weakest Norm UE:</b> ${alert.weakest_norm_ue !== null ? alert.weakest_norm_ue : "N/A"}</p>
+                <p><b>Strongest Norm UE:</b> ${alert.strongest_norm_ue !== null ? alert.strongest_norm_ue : "N/A"}</p>
+            </div>
+        `;
     });
 }
 
@@ -338,10 +469,12 @@ function clearRadioMetrics() {
 initChart();
 fetchStatus();
 fetchMetrics();
+fetchFairnessAlert();
 
 setInterval(() => {
     fetchStatus();
     fetchMetrics();
+    fetchFairnessAlert();
 }, 3000);
 
 </script>
